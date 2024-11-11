@@ -430,8 +430,60 @@ end
 
 local is_before_word = is_before("%w", 1)
 local is_before_arrow = is_before("<", 0)
+local is_inside_tag=function(cursor_position,line)
+    --nvim gives cols in 0 index, add 1 to make 1 index, add another 1 to make sure this sub str does not over lap with pre_cursor
+    local post_cursor = string.sub(line,cursor_position+2,-1) 
+    local pre_cursor = string.reverse(string.sub(line,1,cursor_position+1))
+    local last_preclose = string.find(pre_cursor,">")
+    local last_preopen = string.find(pre_cursor,"<")
+    local last_preslash =string.find(pre_cursor,"/") or last_preopen+1
+    if last_preopen>last_preslash then
+        return false 
+    end
 
+    local first_postopen= string.find(post_cursor,"<")
+    local first_postclose= string.find(post_cursor,">")
+
+    local open_last = false
+    if last_preclose==nil then
+        open_last=true
+    else
+        open_last=last_preopen<last_preclose 
+    end
+
+    local close_first=false 
+    if first_postopen==nil then
+        close_first=true
+    else
+        close_first = first_postclose<first_postopen 
+    end
+
+    if last_preopen ~= nil and first_postclose ~= nil then
+        return close_first and open_last
+    else
+        return false
+    end
+end
+local move_cursor=function()
+    local row,col = unpack(vim.api.nvim_win_get_cursor(0))
+    local current_line = vim.api.nvim_get_current_line()
+    if is_inside_tag(col,current_line) then
+        -- Find where the tag that the cursor is in starts
+        local pre_cursor = string.reverse(string.sub(current_line,1,col))
+        local last_preopen = string.len(pre_cursor)-string.find(pre_cursor,"<")
+
+        local start_pos,end_pos= string.find(current_line,"<%w+",last_preopen,false) -- find the index of the end of the tag name
+        if end_pos==nil then
+            return
+        end 
+
+        
+        local new_pos={row,end_pos-1}
+        vim.api.nvim_win_set_cursor(0, new_pos)
+    end
+end
 M.rename_tag = function()
+    move_cursor()
     if is_before_word() then
         local ok, parser = pcall(vim.treesitter.get_parser)
         if not ok then
